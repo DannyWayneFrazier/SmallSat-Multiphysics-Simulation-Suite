@@ -1,79 +1,93 @@
 import random
-import sys
 
-# ====================================================================
-#   AUDITED PHYSICS CORE & COMPONENT STATE MACHINE
-# ====================================================================
-
-def run_physics_turn(action, fuel_g, battery_w, systems_health):
+def run_physics_turn(action, fuel_g, battery_w, current_health, turn_number):
     """
-    Advanced Physics Core Matrix v4.0.0. Evaluates resource limitations,
-    tracks dynamic electronics battery caps, and monitors component degradation.
+    Simulates core engine tracking, orbital thermodynamics, and environmental hazards.
+    Scales risks based on the current turn number indefinitely.
     """
+    systems_health = current_health.copy()
     thrust_uN = 0.0
     fuel_burned_g = 0.0
-    battery_change_w = 12.0  # Base solar array recovery rate per sector
+    battery_change_w = 12.0  
     internal_temp_c = 20.0
     incidents = []
-    
     propulsion_efficiency = systems_health["propulsion"] / 100.0
+    
+    # Infinite difficulty scaling
+    hazard_multiplier = 1.0 + (turn_number // 3) * 0.03
+    
+    engine_fired = False
 
-    # FIX: Strict resource pre-check gates prevent infinite negative execution loops
-    if action == 1:  # Nominal Longevity FEEP Burn
+    # 1. Action Processing Tree
+    if action == 1:  
         if fuel_g >= 1.5 and battery_w >= 15.0:
             fuel_burned_g = 1.5
             battery_change_w = -15.0
             thrust_uN = 2.64 * propulsion_efficiency
             internal_temp_c = 162.9
+            engine_fired = True
         else:
-            action = 0  # Re-route to system failure mode
-            incidents.append("🚨 POWER/FUEL FAIL: Nominal FEEP grids failed to fire! Thrust flatlined.")
+            fuel_burned_g = 0.0
+            battery_change_w = -5.0  
+            internal_temp_c = 20.0  
+            incidents.append("🚨 POWER/FUEL FAIL: Nominal FEEP grids failed to fire! Grid drain detected.")
 
-    elif action == 2:  # Emergency High-Thrust Burn
+    elif action == 2:  
         if fuel_g >= 12.0 and battery_w >= 45.0:
             fuel_burned_g = 12.0
             battery_change_w = -45.0
             thrust_uN = 260.4 * propulsion_efficiency
             internal_temp_c = 162.9
+            engine_fired = True
             
-            # Dielectric arcing threshold check from your verified FEEP schematic
-            if random.random() < 0.25:  
+            arcing_chance = 0.25 * hazard_multiplier
+            if random.random() < arcing_chance:  
                 systems_health["propulsion"] = max(0, systems_health["propulsion"] - 35)
                 incidents.append("💥 DIELECTRIC ARCING: 3.5 kV tension breached h-BN beds! Propulsion damaged.")
         else:
-            action = 0
-            incidents.append("🚨 POWER/FUEL FAIL: Thruster matrix choked! Trajectory correction failed.")
+            fuel_burned_g = 0.0
+            battery_change_w = -10.0  
+            internal_temp_c = 20.0  
+            incidents.append("🚨 POWER/FUEL FAIL: Thruster matrix choked! Major grid drain detected.")
 
-    elif action == 3:  # Activate Honeycomb Shield Heaters
+    elif action == 3:  
         if battery_w >= 30.0:
             battery_change_w = -30.0
-            internal_temp_c = 45.0  # Safe phase-change plateau from your code
+            internal_temp_c = 45.0  
         else:
-            action = 0
+            fuel_burned_g = 0.0
+            battery_change_w = 0.0  
+            internal_temp_c = -35.0  
             incidents.append("🚨 BATTERY DEPLETED: Active heating element failed to trigger!")
-            internal_temp_c = -50.0
 
-    elif action == 4:  # Complete Systems Cold Shut-down
+    elif action == 4:  
         battery_change_w = 25.0  
-        internal_temp_c = -40.0  # Severe radiative cooling down to deep space sink
-        
-    # Check CNT Neutralizer electrical loops if high-voltage systems fired
-    if action in:
-        if random.random() < 0.08:
-            systems_health["electronics"] = max(0, systems_health["electronics"] - 25)
-            incidents.append("⚡ CNT EXHAUST FAILURE: Neutralizer misfire! Spacecraft hull shocked by backscatter charge.")
+        internal_temp_c = -40.0  
 
-    # Check thermal expansion structural boundaries from shield script
+    elif action == 5:
+        battery_change_w = 12.0
+        internal_temp_c = 20.0
+        
+    # 2. Environmental Hazard & Misfire Tracking
+    if engine_fired:
+        exhaust_chance = 0.08 * hazard_multiplier
+        if random.random() < exhaust_chance:
+            systems_health["electronics"] = max(0, systems_health["electronics"] - 25)
+            incidents.append("⚡ CNT EXHAUST FAILURE: Neutralizer misfire! Hull shocked by backscatter charge.")
+
     if internal_temp_c < -30.0:
         systems_health["thermal"] = max(0, systems_health["thermal"] - 30)
         incidents.append("❄️ LATTICE SHIFT: Extreme sub-zero drop caused silane bonding layers to delaminate!")
 
-    # EXPANSION: Critical state damage propagation rules
-    for component, health in systems_health.items():
-        if 0 < health <= 35:
-            if random.random() < 0.15:  # 15% cascading failure risk under heavy strain
-                systems_health[component] = 0
-                incidents.append(f"💀 CASCADING FAILURE: Severely degraded [{component.upper()}] array completely shorted out!")
+    # 3. Cascading Failure Evaluation Tree (Grace period turn_number > 4)
+    if turn_number > 4:
+        cascade_chance = 0.15 * hazard_multiplier
+        initial_turn_health = systems_health.copy()
+        for component in initial_turn_health.keys():
+            if 0 < systems_health[component] <= 35:
+                if random.random() < cascade_chance:  
+                    systems_health[component] = 0
+                    incidents.append(f"💀 CASCADING FAILURE: Severely degraded [{component.upper()}] array completely shorted out!")
 
     return {
         "fuel_burned": fuel_burned_g,
@@ -85,13 +99,15 @@ def run_physics_turn(action, fuel_g, battery_w, systems_health):
     }
 
 def run_repair_phase(systems_health, scrap_count):
-    """
-    Locked-down Maintenance Loop. Fixes exploits to ensure scrap 
-    is only deducted upon a valid, safe system restoration.
-    """
+    """Handles internal engineering bay processes for component recovery."""
+    updated_health = systems_health.copy()
     while scrap_count > 0:
+        if all(health >= 100 for health in updated_health.values()):
+            print("\n✨ All systems operating at 100% capacity. Closing maintenance window.")
+            break
+            
         print(f"\n🔧 [MAINTENANCE BAY] Casing Scrap Available: {scrap_count} units")
-        print(f"   🚀 Propulsion: {systems_health['propulsion']}% | 🛡️ Thermal: {systems_health['thermal']}% | ⚡ Electronics: {systems_health['electronics']}%")
+        print(f"   🚀 Propulsion: {updated_health['propulsion']}% | 🛡️ Thermal: {updated_health['thermal']}% | ⚡ Electronics: {updated_health['electronics']}%")
         print("   Select a component to patch (Cost: 1 Scrap for +25% System Health):")
         print("   1. Patch Propulsion Modules")
         print("   2. Seal Thermal Shield Voids")
@@ -99,43 +115,43 @@ def run_repair_phase(systems_health, scrap_count):
         print("   4. Finalize Repairs & Clear Maintenance Bay")
         
         try:
-            fix_choice = int(input("\nEnter choice (1-4): "))
+            user_input = input("\nEnter choice (1-4): ").strip()
+            if not user_input:
+                continue
+            fix_choice = int(user_input)
+            
             if fix_choice == 4:
                 break
             elif fix_choice == 1:
-                if systems_health["propulsion"] >= 100:
+                if updated_health["propulsion"] >= 100:
                     print("❌ Propulsion systems already operating at 100% capacity.")
                 else:
-                    systems_health["propulsion"] = min(100, systems_health["propulsion"] + 25)
+                    updated_health["propulsion"] = min(100, updated_health["propulsion"] + 25)
                     scrap_count -= 1
             elif fix_choice == 2:
-                if systems_health["thermal"] >= 100:
+                if updated_health["thermal"] >= 100:
                     print("❌ Thermal shield layers already operating at 100% capacity.")
                 else:
-                    systems_health["thermal"] = min(100, systems_health["thermal"] + 25)
+                    updated_health["thermal"] = min(100, updated_health["thermal"] + 25)
                     scrap_count -= 1
             elif fix_choice == 3:
-                if systems_health["electronics"] >= 100:
+                if updated_health["electronics"] >= 100:
                     print("❌ Electronics systems already operating at 100% capacity.")
                 else:
-                    systems_health["electronics"] = min(100, systems_health["electronics"] + 25)
+                    updated_health["electronics"] = min(100, updated_health["electronics"] + 25)
                     scrap_count -= 1
             else:
-                print("❌ Invalid command parameter input. Choose a sector choice from 1 to 4.")
+                print("❌ Invalid choice. Please select 1-4.")
         except ValueError:
             print("❌ Input verification failed. Numeric parameter required.")
             
-    return systems_health, scrap_count
+    return updated_health, scrap_count
 
-# ====================================================================
-#   THE AEROSPACE SCOREBOARD RANKING MATRIX
-# ====================================================================
-
-def print_scoreboard(fuel_g, battery_w, systems_health, scrap, completed_mission):
+def print_scoreboard(fuel_g, battery_w, systems_health, scrap, completed_mission, softlocked=False):
+    """Computes final telemetry scores and establishes pilot flight rankings."""
     print("\n====================================================================")
     if completed_mission:
         print("🎉 MISSION SUCCESS: FLIGHT PROFILE COMPLETED SUCCESSFULLY! 🎉")
-        
         health_sum = sum(systems_health.values())
         final_score = int((fuel_g * 5) + (battery_w * 2) + health_sum + (scrap * 50))
         
@@ -147,159 +163,118 @@ def print_scoreboard(fuel_g, battery_w, systems_health, scrap, completed_mission
         print(f" 🔥 INTEGRATED STEWARD SCORE: {final_score} POINTS")
         print("-" * 68)
         
-        if final_score >= 750:
+        if final_score >= 650:
             rank = "👑🥇 ELITE FLIGHT DIRECTOR (Aerospace Legend / Perfectionist Run)"
-        elif final_score >= 550:
+        elif final_score >= 500:
             rank = "🥈 MISSION CONTROLLER (Senior Orbit Analyst)"
         elif final_score >= 380:
             rank = "🥉 JUNIOR SYSTEMS TECHNICIAN (Standard Qualification)"
         else:
             rank = "📉 ORBITAL HAZARD (Substandard Pass / Hazardous Re-entry Risk)"
-            
         print(f" COMPANION FLIGHT RANK: {rank}")
     else:
         print("💀 MISSION TERMINATED: SATELLITE UNRESPONSIVE 💀")
-        print(" Reason: A core hardware architecture reached critical 0% state limits.")
+        if softlocked:
+            print(" Reason: Out of functional fuel propellant. Spacecraft drifted out of tracking bounds.")
+        else:
+            print(" Reason: A core hardware architecture reached critical 0% state limits.")
         print(" FINAL ACCOUNTING RANK: 🗑️ SPACE JUNK (Operational Failure)")
-    print("====================================================================\n")
-
-# ====================================================================
-#   MAIN GAME ACTION SYSTEM LOOP
-# ====================================================================
-
+    print("====================================================")
 def play_orbital_command():
-    print("====================================================================")
-    print("      🚀 ORBITAL COMMAND: SATELLITE SURVIVAL SIMULATOR v4.0.0 🚀     ")
-    print("====================================================================")
-    print(" OBJECTIVE: Navigate 6 hazardous orbit tracking sectors in sequence.")
-    print(" SYSTEM RULES: Component health strictly limits maximum battery load.")
-    print("====================================================================\n")
-
-    fuel_g = 100.0
-    battery_w = 100.0
-    scrap = 0
-    current_cycle = 1
-    total_cycles = 6
-    completed_mission = False
+    """Main sequence game initialization and sector turn navigation."""
+    print("==================================================")
+    print("        🛰️ WELCOME TO ORBITAL COMMAND v4.5 🛰️      ")
+    print("==================================================")
     
-    systems_health = {"propulsion": 100, "thermal": 100, "electronics": 100}
-
-    events = {
-        1: "⚠️ SATELLITE DEBRIS ALARM: A cloud of dead engine shards is hurtling toward your current altitude window!",
-        2: "🌑 THERMAL ECLIPSE: Entering Earth's shadow segment. Solar cells blacked out. Extreme structural radiation loss activated.",
-        3: "💨 THERMOSPHERIC DRAG WAVE: Solar radiation flare expands air drag. Trajectory vector rapidly decaying down.",
-        4: "📡 ABANDONED PROBE: Trajectory crosses an old, defunct military probe. High-gain tracking indicates salvage potential.",
-        5: "☀️ GEOMAGNETIC SURGE: A high-density ion shockwave is bombarding your primary electrical distribution bus.",
-        6: "🏁 TERMINAL ORBIT TRACKING: Final telemetry gateway sequence. Lock down active position configurations."
+    fuel_g = 65.0  # Patched fuel margin
+    battery_w = 100.0
+    max_battery = 100.0
+    scrap = 0
+    target_thrust = 500.0
+    total_thrust_delivered = 0.0
+    turn = 1
+    
+    systems_health = {
+        "propulsion": 100,
+        "thermal": 100,
+        "electronics": 100
     }
 
-    while current_cycle <= total_cycles:
-        # Check explicit modular failure game over codes
-        if any(health <= 0 for health in systems_health.values()):
-            completed_mission = False
-            break
-            
-        # EXPANSION: Battery Storage Limit linked dynamically to Avionics Bus stability
-        max_battery_capacity = max(15.0, systems_health["electronics"])
-        if battery_w > max_battery_capacity:
-            battery_w = max_battery_capacity
+    while total_thrust_delivered < target_thrust:
+        # Patched baseline drag to make action 1 viable
+        drag_loss = min(total_thrust_delivered, 1.00 + (turn * 0.1))
+        total_thrust_delivered = max(0.0, total_thrust_delivered - drag_loss)
 
-        print(f"\n▶️ [ORBIT SECTOR {current_cycle} / {total_cycles}]")
-        print(f"  🔋 Fuel Mass: {fuel_g:.1f}g | ⚡ Battery: {battery_w:.1f}W / {max_battery_capacity:.1f}W (Cap) | 📦 Inventory: {scrap} Scrap")
-        print(f"  🛠️ Subsystems -> 🚀 Prop: {systems_health['propulsion']}% | 🛡️ Therm: {systems_health['thermal']}% | ⚡ Elec: {systems_health['electronics']}%")
-        print("-" * 78)
-        print(events[current_cycle])
-        print("-" * 78)
-
-        print(" INITIATE COMMAND SEQUENCE OPTION:")
-        print("  1. Fire FEEP Thrusters: Longevity Profile (Consumes 1.5g Fuel, 15W Power)")
-        print("  2. Fire FEEP Thrusters: High-Thrust Profile (Consumes 12.0g Fuel, 45W Power)")
-        print("  3. Engage Active Honeycomb Core Thermal Heaters (Consumes 30W Power)")
-        print("  4. Route System to Cold Passive Sleep State (Recovers 25W Power, Drops Core Temp)")
+        # Space environment status alerts
+        hazard_level = "NOMINAL" if turn <= 3 else ("ELEVATED" if turn <= 7 else "CRITICAL")
         
-        while True:
-            try:
-                choice = int(input("\nEnter instruction command integer (1-4): "))
-                if choice in: 
-                    break
-                print("❌ Selection out of bounds. Choose an action vector from 1 to 4.")
-            except ValueError:
-                print("❌ Input processing failure. Integer scalar required.")
+        print(f"\n--- 🛰️ SECTOR TURN {turn} [Radiation Matrix: {hazard_level}] ---")
+        if drag_loss > 0:
+            print(f"📉 Gravitational Drag Decay: -{drag_loss:.2f} uN")
+        print(f"Target Thrust Remaining: {max(0.0, target_thrust - total_thrust_delivered):.2f} uN")
+        print(f"Fuel: {fuel_g:.1f}g | Battery: {battery_w:.1f}W | Scrap: {scrap}")
+        print(f"Systems Health -> Prop: {systems_health['propulsion']}% | Therm: {systems_health['thermal']}% | Elec: {systems_health['electronics']}%")
 
-        # Compute Turn Results through Physics Engine
-        result = run_physics_turn(choice, fuel_g, battery_w, systems_health)
+        print("\nSelect Next Sector Action:")
+        print("1. Nominal Longevity FEEP Burn (Cost: 1.5g Fuel, 15W Battery | Small Thrust)")
+        print("2. Emergency High-Thrust Burn  (Cost: 12.0g Fuel, 45W Battery | Huge Thrust, High Risk)")
+        print("3. Engage Core Thermal Heaters (Cost: 30W Battery | Warms ship)")
+        print("4. Complete Systems Shutdown   (Gains: +25W Battery | Drastic Cooling Risk)")
+        print("5. Standard Standby Mode       (Gains: +12W Battery | Safe, No Thrust)")
 
-        # Update primary metrics registers safely
+        try:
+            user_action = input("Enter action (1-5): ").strip()
+            if not user_action:
+                action = 5
+            else:
+                action = int(user_action)
+                if action < 1 or action > 5:
+                    print("❌ Invalid command. Satellite drifted during confusion.")
+                    action = 5 
+        except ValueError:
+            print("❌ Verification failed. Defaulting to Standby Mode.")
+            action = 5
+
+        # 2. Physics Run Operations
+        result = run_physics_turn(action, fuel_g, battery_w, systems_health, turn)
+        
         fuel_g = max(0.0, fuel_g - result["fuel_burned"])
-        battery_w = min(max_battery_capacity, max(0.0, battery_w + result["battery_delta"]))
+        battery_w = min(max_battery, max(0.0, battery_w + result["battery_delta"]))
+        total_thrust_delivered += result["thrust_delivered"]
         systems_health = result["updated_health"]
-
-        print("\n⚙️ PROCESSING DOWNLINK TELEMETRY VECTOR FIELDS...")
-        print(f"   >> Exit Stream Acceleration Impulse: {result['thrust_delivered']:.2f} uN")
-        print(f"   >> Structural Core Thermal Sensor:    {result['temperature']:.1f} °C")
         
         if result["incidents_logged"]:
-            for error in result["incidents_logged"]:
-                print(f"   {error}")
+            print("\n⚠️ TURN LOG WARNINGS:")
+            for incident in result["incidents_logged"]:
+                print(f"  {incident}")
         else:
-            print("   ✅ Downlink Confirmed: Subsystems processing metrics smoothly inside nominal envelopes.")
+            print("\n✨ Sector navigation smooth. No anomalies recorded.")
 
-        # FIX: Explicit Choice Array Checks resolve empty token code parsing failures completely
-        if current_cycle == 1:
-            if choice == 2 and result["thrust_delivered"] > 0:
-                print("   [ACTION RESULT] High-thrust avoidance successful. Swept the zone and salvaged 2 scrap modules!")
-                scrap += 2
-            else:
-                print("   💥 SHARD STRIKE: Avoidance failed or thrusters choked. Shrapnel shredded core thruster lines.")
-                systems_health["propulsion"] = max(0, systems_health["propulsion"] - 45)
+        # 3. Direct Crash Evaluation
+        if any(health <= 0 for health in systems_health.values()):
+            print_scoreboard(fuel_g, battery_w, systems_health, scrap, completed_mission=False)
+            return
 
-        elif current_cycle == 2:
-            if choice == 4:
-                print("   [ACTION RESULT] Command approved. Dormant profile successfully mitigated shadow thermal loads. Extracted 1 scrap casing.")
-                scrap += 1
-            elif result["temperature"] < 0:
-                print("   ❄️ CRYSTALLIZATION STRAIN: Core chill caused microscopic frame stress fissures.")
+        # 4. Salvage Event Loops
+        if random.random() < 0.25:
+            found_scrap = random.randint(1, 2)
+            print(f"📦 ORBITAL SALVAGE: Found {found_scrap} unit(s) of usable casing scrap metal!")
+            scrap += found_scrap
 
-        elif current_cycle == 3:
-            if choice in [1, 2] and result["thrust_delivered"] > 0:
-                print("   [ACTION RESULT] Boost sequence stabilized altitude against atmospheric friction.")
-            else:
-                print("   📉 APOGEE LOSS: Drag friction over-loaded structure, burning out avionics links.")
-                systems_health["electronics"] = max(0, systems_health["electronics"] - 50)
+        # 5. Interactive Maintenance Evaluation
+        if scrap > 0:
+            prompt_repair = input(f"\n🔧 Scrap available ({scrap} units). Open maintenance bay? (y/n): ").strip().lower()
+            if prompt_repair == 'y':
+                systems_health, scrap = run_repair_phase(systems_health, scrap)
 
-        elif current_cycle == 4:
-            if choice in [1, 2] and result["thrust_delivered"] > 0:
-                print("   [ACTION RESULT] Capture arrays locked. Successfully ripped 3 high-grade salvage scraps from the dead hulk!")
-                scrap += 3
-            else:
-                print("   [ACTION RESULT] Spacecraft drifted past the orbital marker. Salvage opportunity missed.")
+        # 6. Structural Soft-Lock Detection
+        if fuel_g < 1.5 and total_thrust_delivered < target_thrust:
+            print_scoreboard(fuel_g, battery_w, systems_health, scrap, completed_mission=False, softlocked=True)
+            return
 
-        elif current_cycle == 5:
-            if choice == 4:
-                print("   [ACTION RESULT] Masterstroke. Cold shutdown completely insulated circuit arrays from ionization arcs.")
-            else:
-                print("   ⚡ SURGE INDUCTION: High-energy flare induction overloaded processing gates.")
-                systems_health["electronics"] = max(0, systems_health["electronics"] - 45)
+        turn += 1
 
-        # Re-check component life status after events before opening repair panel
-        if any(h <= 0 for h in systems_health.values()):
-            completed_mission = False
-            break
-
-        # Open Repair Interface Phase if inventory rules permit
-        if scrap > 0 and current_cycle < total_cycles:
-            systems_health, scrap = run_repair_phase(systems_health, scrap)
-
-        if current_cycle == total_cycles and all(h > 0 for h in systems_health.values()):
-            completed_mission = True
-
-        current_cycle += 1
-        if current_cycle <= total_cycles:
-            print("\nInstruction vector completed. Press Enter to sync clock registers and enter next sector...")
-            input()
-
-    # Launch Scoreboard Engine
-    print_scoreboard(fuel_g, battery_w, systems_health, scrap, completed_mission)
+    print_scoreboard(fuel_g, battery_w, systems_health, scrap, completed_mission=True)
 
 if __name__ == "__main__":
     play_orbital_command()
