@@ -1,9 +1,10 @@
 import sys
 import os
 
-sys.path.append(os.path.join(os.path.dirname(__file__), 'orbital_command'))
+# This line automatically configures the satellite_game folder path
+sys.path.append(os.path.join(os.path.dirname(__file__), 'satellite_game'))
 
-from orbital_command import main
+from satellite_game import main
 
 if __name__ == "__main__":
     main.play_orbital_command()
